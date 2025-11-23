@@ -72,7 +72,114 @@ class UnicodeProcessor {
 }
 
 func preprocessText(_ text: String) -> String {
-    return text.precomposedStringWithCompatibilityMapping
+    // TODO: Need advanced normalizer for better performance
+    var text = text.precomposedStringWithCompatibilityMapping
+
+    // FIXME: this should be fixed for non-English languages
+
+    // Remove emojis (wide Unicode range)
+    // Swift NSRegularExpression doesn't support Unicode escapes above \uFFFF
+    // Use character filtering instead
+    text = text.unicodeScalars.filter { scalar in
+        let value = scalar.value
+        return !((value >= 0x1F600 && value <= 0x1F64F) ||
+                 (value >= 0x1F300 && value <= 0x1F5FF) ||
+                 (value >= 0x1F680 && value <= 0x1F6FF) ||
+                 (value >= 0x1F700 && value <= 0x1F77F) ||
+                 (value >= 0x1F780 && value <= 0x1F7FF) ||
+                 (value >= 0x1F800 && value <= 0x1F8FF) ||
+                 (value >= 0x1F900 && value <= 0x1F9FF) ||
+                 (value >= 0x1FA00 && value <= 0x1FA6F) ||
+                 (value >= 0x1FA70 && value <= 0x1FAFF) ||
+                 (value >= 0x2600 && value <= 0x26FF) ||
+                 (value >= 0x2700 && value <= 0x27BF) ||
+                 (value >= 0x1F1E6 && value <= 0x1F1FF))
+    }.map { String($0) }.joined()
+
+    // Replace various dashes and symbols
+    let replacements: [String: String] = [
+        "–": "-",      // en dash
+        "‑": "-",      // non-breaking hyphen
+        "—": "-",      // em dash
+        "¯": " ",      // macron
+        "_": " ",      // underscore
+        "\u{201C}": "\"",     // left double quote
+        "\u{201D}": "\"",     // right double quote
+        "\u{2018}": "'",      // left single quote
+        "\u{2019}": "'",      // right single quote
+        "´": "'",      // acute accent
+        "`": "'",      // grave accent
+        "[": " ",      // left bracket
+        "]": " ",      // right bracket
+        "|": " ",      // vertical bar
+        "/": " ",      // slash
+        "#": " ",      // hash
+        "→": " ",      // right arrow
+        "←": " ",      // left arrow
+    ]
+
+    for (old, new) in replacements {
+        text = text.replacingOccurrences(of: old, with: new)
+    }
+
+    // Remove combining diacritics // FIXME: this should be fixed for non-English languages
+    let diacriticsPattern = try! NSRegularExpression(pattern: "[\\u0302\\u0303\\u0304\\u0305\\u0306\\u0307\\u0308\\u030A\\u030B\\u030C\\u0327\\u0328\\u0329\\u032A\\u032B\\u032C\\u032D\\u032E\\u032F]")
+    let diacriticsRange = NSRange(text.startIndex..., in: text)
+    text = diacriticsPattern.stringByReplacingMatches(in: text, range: diacriticsRange, withTemplate: "")
+
+    // Remove special symbols
+    let specialSymbols = ["♥", "☆", "♡", "©", "\\"]
+    for symbol in specialSymbols {
+        text = text.replacingOccurrences(of: symbol, with: "")
+    }
+
+    // Replace known expressions
+    let exprReplacements: [String: String] = [
+        "@": " at ",
+        "e.g.,": "for example, ",
+        "i.e.,": "that is, ",
+    ]
+
+    for (old, new) in exprReplacements {
+        text = text.replacingOccurrences(of: old, with: new)
+    }
+
+    // Fix spacing around punctuation
+    text = text.replacingOccurrences(of: " ,", with: ",")
+    text = text.replacingOccurrences(of: " .", with: ".")
+    text = text.replacingOccurrences(of: " !", with: "!")
+    text = text.replacingOccurrences(of: " ?", with: "?")
+    text = text.replacingOccurrences(of: " ;", with: ";")
+    text = text.replacingOccurrences(of: " :", with: ":")
+    text = text.replacingOccurrences(of: " '", with: "'")
+
+    // Remove duplicate quotes
+    while text.contains("\"\"") {
+        text = text.replacingOccurrences(of: "\"\"", with: "\"")
+    }
+    while text.contains("''") {
+        text = text.replacingOccurrences(of: "''", with: "'")
+    }
+    while text.contains("``") {
+        text = text.replacingOccurrences(of: "``", with: "`")
+    }
+
+    // Remove extra spaces
+    let whitespacePattern = try! NSRegularExpression(pattern: "\\s+")
+    let whitespaceRange = NSRange(text.startIndex..., in: text)
+    text = whitespacePattern.stringByReplacingMatches(in: text, range: whitespaceRange, withTemplate: " ")
+    text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // If text doesn't end with punctuation, quotes, or closing brackets, add a period
+    if !text.isEmpty {
+        let punctPattern = try! NSRegularExpression(pattern: "[.!?;:,'\"\\u201C\\u201D\\u2018\\u2019)\\]}…。」』】〉》›»]$")
+        let punctRange = NSRange(text.startIndex..., in: text)
+        if punctPattern.firstMatch(in: text, range: punctRange) == nil {
+            text += "."
+        }
+    }
+
+    return text
 }
 
 func lengthToMask(_ lengths: [Int], maxLen: Int? = nil) -> [[[Float]]] {

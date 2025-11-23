@@ -20,6 +20,24 @@ void clearTensorBuffers() {
 }
 
 // ============================================================================
+// Helper function - trim
+// ============================================================================
+
+static std::string trim(const std::string& str) {
+    size_t start = 0;
+    while (start < str.size() && std::isspace(static_cast<unsigned char>(str[start]))) {
+        start++;
+    }
+    
+    size_t end = str.size();
+    while (end > start && std::isspace(static_cast<unsigned char>(str[end - 1]))) {
+        end--;
+    }
+    
+    return str.substr(start, end - start);
+}
+
+// ============================================================================
 // UnicodeProcessor implementation
 // ============================================================================
 
@@ -28,10 +46,148 @@ UnicodeProcessor::UnicodeProcessor(const std::string& unicode_indexer_json_path)
 }
 
 std::string UnicodeProcessor::preprocessText(const std::string& text) {
-    // Simple NFKD normalization (C++ doesn't have built-in Unicode normalization)
-    // For now, just return the text as-is
-    // TODO: add proper Unicode normalization
-    return text;
+    // TODO: Need advanced normalizer for better performance
+    // NOTE: C++ doesn't have built-in Unicode normalization like Python's NFKD
+    // For full Unicode normalization, consider using ICU library
+    // This implementation handles basic text preprocessing
+    
+    std::string result = text;
+    
+    // FIXME: this should be fixed for non-English languages
+    
+    // Remove emojis and various Unicode symbols
+    // Using regex to remove common emoji ranges and special symbols
+    // Note: This is a simplified version - full emoji support needs UTF-8 handling
+    std::regex emoji_pattern(
+        "[\xF0\x9F][\x80-\xBF]{2}|"  // Common emoji pattern in UTF-8
+        "[\xE2][\x80-\xBF]{2}|"       // Various symbols
+        "[\xE2][\x98-\x9E][\x80-\xBF]" // More symbols
+    );
+    result = std::regex_replace(result, emoji_pattern, "");
+    
+    // Replace various dashes and symbols
+    struct Replacement {
+        const char* from;
+        const char* to;
+    };
+    
+    const Replacement replacements[] = {
+        {"–", "-"},      // en dash
+        {"‑", "-"},      // non-breaking hyphen
+        {"—", "-"},      // em dash
+        {"¯", " "},      // macron
+        {"_", " "},      // underscore
+        {""", "\""},     // left double quote (U+201C)
+        {""", "\""},     // right double quote (U+201D)
+        {"'", "'"},      // left single quote (U+2018)
+        {"'", "'"},      // right single quote (U+2019)
+        {"´", "'"},      // acute accent
+        {"`", "'"},      // grave accent
+        {"[", " "},      // left bracket
+        {"]", " "},      // right bracket
+        {"|", " "},      // vertical bar
+        {"/", " "},      // slash
+        {"#", " "},      // hash
+        {"→", " "},      // right arrow
+        {"←", " "},      // left arrow
+    };
+    
+    for (const auto& repl : replacements) {
+        size_t pos = 0;
+        while ((pos = result.find(repl.from, pos)) != std::string::npos) {
+            result.replace(pos, strlen(repl.from), repl.to);
+            pos += strlen(repl.to);
+        }
+    }
+    
+    // Remove combining diacritics (common combining marks in UTF-8)
+    // FIXME: this should be fixed for non-English languages
+    std::regex diacritics_pattern(
+        "[\xCC\xCD][\x80-\xBF]"  // Combining diacritical marks range
+    );
+    result = std::regex_replace(result, diacritics_pattern, "");
+    
+    // Remove special symbols
+    const char* special_symbols[] = {"♥", "☆", "♡", "©", "\\"};
+    for (const char* symbol : special_symbols) {
+        size_t pos = 0;
+        while ((pos = result.find(symbol, pos)) != std::string::npos) {
+            result.erase(pos, strlen(symbol));
+        }
+    }
+    
+    // Replace known expressions
+    const Replacement expr_replacements[] = {
+        {"@", " at "},
+        {"e.g.,", "for example, "},
+        {"i.e.,", "that is, "},
+    };
+    
+    for (const auto& repl : expr_replacements) {
+        size_t pos = 0;
+        while ((pos = result.find(repl.from, pos)) != std::string::npos) {
+            result.replace(pos, strlen(repl.from), repl.to);
+            pos += strlen(repl.to);
+        }
+    }
+    
+    // Fix spacing around punctuation
+    result = std::regex_replace(result, std::regex(" ,"), ",");
+    result = std::regex_replace(result, std::regex(" \\."), ".");
+    result = std::regex_replace(result, std::regex(" !"), "!");
+    result = std::regex_replace(result, std::regex(" \\?"), "?");
+    result = std::regex_replace(result, std::regex(" ;"), ";");
+    result = std::regex_replace(result, std::regex(" :"), ":");
+    result = std::regex_replace(result, std::regex(" '"), "'");
+    
+    // Remove duplicate quotes
+    while (result.find("\"\"") != std::string::npos) {
+        size_t pos = result.find("\"\"");
+        result.replace(pos, 2, "\"");
+    }
+    while (result.find("''") != std::string::npos) {
+        size_t pos = result.find("''");
+        result.replace(pos, 2, "'");
+    }
+    while (result.find("``") != std::string::npos) {
+        size_t pos = result.find("``");
+        result.replace(pos, 2, "`");
+    }
+    
+    // Remove extra spaces
+    result = std::regex_replace(result, std::regex("\\s+"), " ");
+    result = trim(result);
+    
+    // If text doesn't end with punctuation, quotes, or closing brackets, add a period
+    if (!result.empty()) {
+        char last_char = result.back();
+        bool ends_with_punct = (
+            last_char == '.' || last_char == '!' || last_char == '?' ||
+            last_char == ';' || last_char == ':' || last_char == ',' ||
+            last_char == '\'' || last_char == '"' || last_char == ')' ||
+            last_char == ']' || last_char == '}' || last_char == '>'
+        );
+        
+        // Check for UTF-8 multibyte ending punctuation (e.g., …, 。, curly quotes, etc.)
+        if (!ends_with_punct && result.size() >= 3) {
+            std::string last_three = result.substr(result.size() - 3);
+            if (last_three == "…" || last_three == "。" || 
+                last_three == "」" || last_three == "』" ||
+                last_three == "】" || last_three == "〉" ||
+                last_three == "》" || last_three == "›" ||
+                last_three == "»" || last_three == """ ||
+                last_three == """ || last_three == "'" ||
+                last_three == "'") {
+                ends_with_punct = true;
+            }
+        }
+        
+        if (!ends_with_punct) {
+            result += ".";
+        }
+    }
+    
+    return result;
 }
 
 std::vector<uint16_t> UnicodeProcessor::textToUnicodeValues(const std::string& text) {
@@ -771,20 +927,6 @@ std::string sanitizeFilename(const std::string& text, int max_len) {
 // ============================================================================
 // Chunk text
 // ============================================================================
-
-static std::string trim(const std::string& str) {
-    size_t start = 0;
-    while (start < str.size() && std::isspace(static_cast<unsigned char>(str[start]))) {
-        start++;
-    }
-    
-    size_t end = str.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(str[end - 1]))) {
-        end--;
-    }
-    
-    return str.substr(start, end - start);
-}
 
 std::vector<std::string> chunkText(const std::string& text, int max_len) {
     std::vector<std::string> chunks;

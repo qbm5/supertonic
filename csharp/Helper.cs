@@ -71,10 +71,144 @@ namespace Supertonic
             }
         }
 
+        private static string RemoveEmojis(string text)
+        {
+            var result = new StringBuilder();
+            for (int i = 0; i < text.Length; i++)
+            {
+                int codePoint;
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    // Get the full code point from surrogate pair
+                    codePoint = char.ConvertToUtf32(text[i], text[i + 1]);
+                    i++; // Skip the low surrogate
+                }
+                else
+                {
+                    codePoint = text[i];
+                }
+
+                // Check if code point is in emoji ranges
+                bool isEmoji = (codePoint >= 0x1F600 && codePoint <= 0x1F64F) ||
+                               (codePoint >= 0x1F300 && codePoint <= 0x1F5FF) ||
+                               (codePoint >= 0x1F680 && codePoint <= 0x1F6FF) ||
+                               (codePoint >= 0x1F700 && codePoint <= 0x1F77F) ||
+                               (codePoint >= 0x1F780 && codePoint <= 0x1F7FF) ||
+                               (codePoint >= 0x1F800 && codePoint <= 0x1F8FF) ||
+                               (codePoint >= 0x1F900 && codePoint <= 0x1F9FF) ||
+                               (codePoint >= 0x1FA00 && codePoint <= 0x1FA6F) ||
+                               (codePoint >= 0x1FA70 && codePoint <= 0x1FAFF) ||
+                               (codePoint >= 0x2600 && codePoint <= 0x26FF) ||
+                               (codePoint >= 0x2700 && codePoint <= 0x27BF) ||
+                               (codePoint >= 0x1F1E6 && codePoint <= 0x1F1FF);
+
+                if (!isEmoji)
+                {
+                    if (codePoint > 0xFFFF)
+                    {
+                        // Add back as surrogate pair
+                        result.Append(char.ConvertFromUtf32(codePoint));
+                    }
+                    else
+                    {
+                        result.Append((char)codePoint);
+                    }
+                }
+            }
+            return result.ToString();
+        }
+
         private string PreprocessText(string text)
         {
-            // Simple normalization (C# has Normalize built-in)
-            return text.Normalize(NormalizationForm.FormKD);
+            // TODO: Need advanced normalizer for better performance
+            text = text.Normalize(NormalizationForm.FormKD);
+
+            // FIXME: this should be fixed for non-English languages
+
+            // Remove emojis (wide Unicode range)
+            // C# doesn't support \u{...} syntax in regex, so we use character filtering instead
+            text = RemoveEmojis(text);
+
+            // Replace various dashes and symbols
+            var replacements = new Dictionary<string, string>
+            {
+                {"–", "-"},      // en dash
+                {"‑", "-"},      // non-breaking hyphen
+                {"—", "-"},      // em dash
+                {"¯", " "},      // macron
+                {"_", " "},      // underscore
+                {"\u201C", "\""},     // left double quote
+                {"\u201D", "\""},     // right double quote
+                {"\u2018", "'"},      // left single quote
+                {"\u2019", "'"},      // right single quote
+                {"´", "'"},      // acute accent
+                {"`", "'"},      // grave accent
+                {"[", " "},      // left bracket
+                {"]", " "},      // right bracket
+                {"|", " "},      // vertical bar
+                {"/", " "},      // slash
+                {"#", " "},      // hash
+                {"→", " "},      // right arrow
+                {"←", " "},      // left arrow
+            };
+
+            foreach (var kvp in replacements)
+            {
+                text = text.Replace(kvp.Key, kvp.Value);
+            }
+
+            // Remove combining diacritics // FIXME: this should be fixed for non-English languages
+            text = Regex.Replace(text, @"[\u0302\u0303\u0304\u0305\u0306\u0307\u0308\u030A\u030B\u030C\u0327\u0328\u0329\u032A\u032B\u032C\u032D\u032E\u032F]", "");
+
+            // Remove special symbols
+            text = Regex.Replace(text, @"[♥☆♡©\\]", "");
+
+            // Replace known expressions
+            var exprReplacements = new Dictionary<string, string>
+            {
+                {"@", " at "},
+                {"e.g.,", "for example, "},
+                {"i.e.,", "that is, "},
+            };
+
+            foreach (var kvp in exprReplacements)
+            {
+                text = text.Replace(kvp.Key, kvp.Value);
+            }
+
+            // Fix spacing around punctuation
+            text = Regex.Replace(text, @" ,", ",");
+            text = Regex.Replace(text, @" \.", ".");
+            text = Regex.Replace(text, @" !", "!");
+            text = Regex.Replace(text, @" \?", "?");
+            text = Regex.Replace(text, @" ;", ";");
+            text = Regex.Replace(text, @" :", ":");
+            text = Regex.Replace(text, @" '", "'");
+
+            // Remove duplicate quotes
+            while (text.Contains("\"\""))
+            {
+                text = text.Replace("\"\"", "\"");
+            }
+            while (text.Contains("''"))
+            {
+                text = text.Replace("''", "'");
+            }
+            while (text.Contains("``"))
+            {
+                text = text.Replace("``", "`");
+            }
+
+            // Remove extra spaces
+            text = Regex.Replace(text, @"\s+", " ").Trim();
+
+            // If text doesn't end with punctuation, quotes, or closing brackets, add a period
+            if (!Regex.IsMatch(text, @"[.!?;:,'\u0022\u201C\u201D\u2018\u2019)\]}…。」』】〉》›»]$"))
+            {
+                text += ".";
+            }
+
+            return text;
         }
 
         private int[] TextToUnicodeValues(string text)

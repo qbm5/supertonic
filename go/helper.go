@@ -327,8 +327,97 @@ func splitSentences(text string) []string {
 
 // Utility functions
 func preprocessText(text string) string {
-	// Simple normalization (Go doesn't have built-in NFKD normalization)
+	// TODO: Need advanced normalizer for better performance
+	// NOTE: Go doesn't have built-in NFKD normalization like Python
 	// For full Unicode normalization, use golang.org/x/text/unicode/norm
+	// This implementation handles basic text preprocessing
+
+	// FIXME: this should be fixed for non-English languages
+
+	// Remove emojis and various Unicode symbols
+	emojiPattern := regexp.MustCompile(`[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{1F700}-\x{1F77F}\x{1F780}-\x{1F7FF}\x{1F800}-\x{1F8FF}\x{1F900}-\x{1F9FF}\x{1FA00}-\x{1FA6F}\x{1FA70}-\x{1FAFF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}\x{1F1E6}-\x{1F1FF}]+`)
+	text = emojiPattern.ReplaceAllString(text, "")
+
+	// Replace various dashes and symbols
+	replacements := map[string]string{
+		"–": "-",    // en dash
+		"‑": "-",    // non-breaking hyphen
+		"—": "-",    // em dash
+		"¯": " ",    // macron
+		"_": " ",    // underscore
+		"\u201C": "\"",   // left double quote
+		"\u201D": "\"",   // right double quote
+		"\u2018": "'",    // left single quote
+		"\u2019": "'",    // right single quote
+		"´": "'",    // acute accent
+		"`": "'",    // grave accent
+		"[": " ",    // left bracket
+		"]": " ",    // right bracket
+		"|": " ",    // vertical bar
+		"/": " ",    // slash
+		"#": " ",    // hash
+		"→": " ",    // right arrow
+		"←": " ",    // left arrow
+	}
+
+	for old, new := range replacements {
+		text = strings.ReplaceAll(text, old, new)
+	}
+
+	// Remove combining diacritics (common combining marks)
+	// FIXME: this should be fixed for non-English languages
+	diacriticsPattern := regexp.MustCompile(`[\x{0302}\x{0303}\x{0304}\x{0305}\x{0306}\x{0307}\x{0308}\x{030A}\x{030B}\x{030C}\x{0327}\x{0328}\x{0329}\x{032A}\x{032B}\x{032C}\x{032D}\x{032E}\x{032F}]`)
+	text = diacriticsPattern.ReplaceAllString(text, "")
+
+	// Remove special symbols
+	specialSymbols := []string{"♥", "☆", "♡", "©", "\\"}
+	for _, symbol := range specialSymbols {
+		text = strings.ReplaceAll(text, symbol, "")
+	}
+
+	// Replace known expressions
+	exprReplacements := map[string]string{
+		"@":     " at ",
+		"e.g.,": "for example, ",
+		"i.e.,": "that is, ",
+	}
+
+	for old, new := range exprReplacements {
+		text = strings.ReplaceAll(text, old, new)
+	}
+
+	// Fix spacing around punctuation
+	text = regexp.MustCompile(` ,`).ReplaceAllString(text, ",")
+	text = regexp.MustCompile(` \.`).ReplaceAllString(text, ".")
+	text = regexp.MustCompile(` !`).ReplaceAllString(text, "!")
+	text = regexp.MustCompile(` \?`).ReplaceAllString(text, "?")
+	text = regexp.MustCompile(` ;`).ReplaceAllString(text, ";")
+	text = regexp.MustCompile(` :`).ReplaceAllString(text, ":")
+	text = regexp.MustCompile(` '`).ReplaceAllString(text, "'")
+
+	// Remove duplicate quotes
+	for strings.Contains(text, `""`) {
+		text = strings.ReplaceAll(text, `""`, `"`)
+	}
+	for strings.Contains(text, "''") {
+		text = strings.ReplaceAll(text, "''", "'")
+	}
+	for strings.Contains(text, "``") {
+		text = strings.ReplaceAll(text, "``", "`")
+	}
+
+	// Remove extra spaces
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+	text = strings.TrimSpace(text)
+
+	// If text doesn't end with punctuation, quotes, or closing brackets, add a period
+	if text != "" {
+		endsWithPunct := regexp.MustCompile(`[.!?;:,'"\x{201C}\x{201D}\x{2018}\x{2019})\]}…。」』】〉》›»]$`)
+		if !endsWithPunct.MatchString(text) {
+			text += "."
+		}
+	}
+
 	return text
 }
 

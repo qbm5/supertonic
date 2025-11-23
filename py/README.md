@@ -4,6 +4,8 @@ This guide provides examples for running TTS inference using `example_onnx.py`.
 
 ## 📰 Update News
 
+**2025.11.23** - Enhanced text preprocessing with comprehensive normalization, emoji removal, symbol replacement, and punctuation handling for improved synthesis quality.
+
 **2025.11.19** - Added `--speed` parameter to control speech synthesis speed. Adjust the speed factor to make speech faster or slower while maintaining natural quality.
 
 **2025.11.19** - Added automatic text chunking for long-form inference. Long texts are split into chunks and synthesized with natural pauses.
