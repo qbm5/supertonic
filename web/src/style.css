@@ -159,9 +159,10 @@ button:disabled {
     min-width: 200px;
 }
 
+
+
 .backend-badge {
     display: inline-block;
-    visibility: hidden;
     padding: 6px 12px;
     background: #ff9800;
     color: white;
@@ -247,6 +248,8 @@ button:disabled {
     overflow-y: auto;
     padding-right: 8px;
     flex: 1;
+    max-height: 200px;
+    overflow: auto;
 }
 
 .result-text::-webkit-scrollbar {
@@ -269,7 +272,7 @@ button:disabled {
 
 .result-info {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 0;
     background: #fafbff;
 }
@@ -284,7 +287,7 @@ button:disabled {
     border-bottom: 1px solid #e8ecf5;
 }
 
-.info-item:nth-child(1) {
+.info-item:nth-child(1), .info-item:nth-child(2) {
     border-right: 1px solid #e8ecf5;
 }
 
@@ -332,6 +335,10 @@ button:disabled {
     align-items: center;
     justify-content: center;
     gap: 8px;
+}
+
+.result-item button.min {
+    width:unset;
 }
 
 .result-item button:hover {
@@ -449,5 +456,42 @@ audio {
 }
 
 .hidden {
-    display: none;
+    display: none !important;
+}
+
+.playback {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+}
+
+.playback .timers {
+    font-size: 0.9em;
+    color: #555;
+    position: absolute;
+    right: 0;
+    bottom: 0;
+}
+
+.progress-bar {
+    width: 100%;
+    background-color: #f3f3f3;
+    border-radius: 8px;
+    overflow: hidden;
+    height: 12px;
+}
+.progress-bar-filled {
+    height: 100%;
+    background-color: #667eea;
+    width: 0%;
+}
+.fl-1 {
+    flex: 1;
+}
+.fl-5 {
+    flex: 5;
+}
+.fl-10 {
+    flex: 10;
 }

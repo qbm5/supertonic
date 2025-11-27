@@ -32,6 +32,23 @@ const statusText = document.getElementById('statusText');
 const backendBadge = document.getElementById('backendBadge');
 const resultsContainer = document.getElementById('results');
 const errorBox = document.getElementById('error');
+const pending = document.getElementById('pending');
+const progressBar = document.getElementById('progress-bar');    
+const playBtn = document.getElementById('play-btn');    
+const pauseBtn = document.getElementById('pause-btn');   
+const progressBarFilled = document.getElementById('progress-bar-filled');
+
+let scheduledTime = 0;
+const silenceDuration = 0.3;
+let sampleRate = 0; // or set this when you know it
+
+// 🔊 Web Audio setup for streaming playback
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioCtx();
+
+let latestUrl = "";
+
+
 
 function showStatus(message, type = 'info') {
     statusText.innerHTML = message;
@@ -154,7 +171,13 @@ voiceStyleSelect.addEventListener('change', async (e) => {
     }
 });
 
-// Main synthesis function
+// Call this once when you start a synthesis session
+function initAudioContext() {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioCtx();
+    scheduledTime = audioCtx.currentTime;
+}
+
 async function generateSpeech() {
     const text = textInput.value.trim();
     if (!text) {
@@ -179,34 +202,76 @@ async function generateSpeech() {
         hideError();
         
         // Clear results and show placeholder
-        resultsContainer.innerHTML = `
-            <div class="results-placeholder generating">
-                <div class="results-placeholder-icon">⏳</div>
-                <p>Generating speech...</p>
-            </div>
-        `;
+        resultsContainer.classList.add('hidden');
+        pending.classList.remove('hidden');
         
         const totalStep = parseInt(totalStepInput.value);
         const speed = parseFloat(speedInput.value);
-        
+        const silenceDuration = 0.3;
+
         showStatus('ℹ️ <strong>Generating speech from text...</strong>');
         const tic = Date.now();
+
+        // Make sure context is running (click on button counts as user gesture)
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+
+        scheduledTime = audioCtx.currentTime; // when next chunk will start
+        sampleRate = textToSpeech.sampleRate;
         
+        // per-chunk playback helper
+        const playChunk = ({ wav, duration, index, totalChunks }) => {
+            if (!audioCtx) {
+                initAudioContext();
+            }
+
+            // Build AudioBuffer from wav float array
+            const buffer = audioCtx.createBuffer(1, wav.length, sampleRate);
+            const channelData = buffer.getChannelData(0);
+            for (let i = 0; i < wav.length; i++) {
+                channelData[i] = wav[i];
+            }
+
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+
+            // Make sure we don’t schedule in the past
+            const startAt = Math.max(audioCtx.currentTime, scheduledTime);
+
+            // Schedule this chunk
+            source.start(startAt);
+            playBtn.classList.add('hidden');
+            pauseBtn.classList.remove('hidden');
+
+            // Reserve time for this chunk + silence
+            scheduledTime = startAt + duration + silenceDuration;
+
+            showStatus(
+                `ℹ️ <strong>Playing chunk ${index + 1}/${totalChunks}...</strong>`
+            );
+        };
+
+        // Call TTS with both progressCallback and chunkCallback
         const { wav, duration } = await textToSpeech.call(
-            text, 
-            currentStyle, 
+            text,
+            currentStyle,
             totalStep,
             speed,
-            0.3,
+            silenceDuration,
             (step, total) => {
-                showStatus(`ℹ️ <strong>Denoising (${step}/${total})...</strong>`);
-            }
+                //showStatus(`ℹ️ <strong>Denoising (${step}/${total})...</strong>`);
+            },
+            playChunk 
         );
         
         const toc = Date.now();
         console.log(`Text-to-speech synthesis: ${((toc - tic) / 1000).toFixed(2)}s`);
         
         showStatus('ℹ️ <strong>Creating audio file...</strong>');
+
+        // Full concatenated wav for final audio element + download
         const wavLen = Math.floor(textToSpeech.sampleRate * duration[0]);
         const wavOut = wav.slice(0, wavLen);
         
@@ -220,36 +285,24 @@ async function generateSpeech() {
         const totalTimeSec = ((endTime - startTime) / 1000).toFixed(2);
         const audioDurationSec = duration[0].toFixed(2);
         
-        // Display result with full text
-        resultsContainer.innerHTML = `
-            <div class="result-item">
-                <div class="result-text-container">
-                    <div class="result-text-label">Input Text</div>
-                    <div class="result-text">${text}</div>
-                </div>
-                <div class="result-info">
-                    <div class="info-item">
-                        <span>📊 Audio Length</span>
-                        <strong>${audioDurationSec}s</strong>
-                    </div>
-                    <div class="info-item">
-                        <span>⏱️ Generation Time</span>
-                        <strong>${totalTimeSec}s</strong>
-                    </div>
-                </div>
-                <div class="result-player">
-                    <audio controls>
-                        <source src="${url}" type="audio/wav">
-                    </audio>
-                </div>
-                <div class="result-actions">
-                    <button onclick="downloadAudio('${url}', 'synthesized_speech.wav')">
-                        <span>⬇️</span>
-                        <span>Download WAV</span>
-                    </button>
-                </div>
-            </div>
-        `;
+        // Display result with full text & replay/download controls
+        resultsContainer.classList.remove('hidden');
+        pending.classList.add('hidden');
+
+        const inputTextDiv = document.getElementById('inputText');
+        
+        const totalTimeSecLabel = document.getElementById('totalTimeSecLabel');
+        const audioLengthLabel = document.getElementById('audioLengthLabel');
+        const audioElement = document.getElementById('audioElement');
+        const audioSource = document.getElementById('audioSource');
+
+        inputTextDiv.textContent = text;
+        totalTimeSecLabel.textContent = `${totalTimeSec}s`;
+        audioLengthLabel.textContent = `${audioDurationSec}s`;
+        latestUrl = url;
+
+        audioSource.src = url;
+        audioElement.load();
         
         showStatus('✅ <strong>Speech synthesis completed successfully!</strong>', 'success');
         
@@ -271,9 +324,9 @@ async function generateSpeech() {
 }
 
 // Download handler (make it global so it can be called from onclick)
-window.downloadAudio = function(url, filename) {
+window.downloadAudio = function(filename) {
     const a = document.createElement('a');
-    a.href = url;
+    a.href = latestUrl;
     a.download = filename;
     a.click();
 };
@@ -286,3 +339,26 @@ window.addEventListener('load', async () => {
     generateBtn.disabled = true;
     await initializeModels();
 });
+
+window.playAudio = async function (pause) {
+    if (!audioCtx) {
+        initAudioContext();
+    }
+
+    if (!pause) {
+        // PLAY (resume context)
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+
+        playBtn.classList.add('hidden');
+        pauseBtn.classList.remove('hidden');
+    } else {
+        // PAUSE (suspend context)
+        if (audioCtx.state === 'running') {
+            await audioCtx.suspend();
+        }
+        pauseBtn.classList.add('hidden');
+        playBtn.classList.remove('hidden');
+    }
+};
