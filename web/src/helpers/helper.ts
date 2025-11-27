@@ -351,7 +351,7 @@ export class TextToSpeech {
             xt.push(batch);
         }
         
-        const latentLengths = wavLengths.map(len => Math.max(1, Math.floor((len + chunkSize - 1) / chunkSize)));
+        const latentLengths = wavLengths.map(len => Math.floor((len + chunkSize - 1) / chunkSize));
         const latentMask = this.lengthToMask(latentLengths, latentLen as any);
         
         // Apply mask
